@@ -4,7 +4,71 @@ on:
   push:
     paths-ignore:
       - "keymap-drawer/**"
-
+permissions:
+  contents: read
 jobs:
   build:
-    uses: cormoran/zmk/.github/workflows/build-user-config.yml@main+dya
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [left, right]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned source
+        shell: bash
+        run: |
+          mkdir -p /tmp/velvet/config
+          cp -R config/* /tmp/velvet/config/
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/velvet/config/west.yml')
+          s = p.read_text()
+          assert 'revision: main+dya' in s
+          p.write_text(s.replace('revision: main+dya', 'revision: e5c9b69', 1))
+          PY
+          cd /tmp/velvet
+          west init -l config
+          west update --fetch-opt=--filter=tree:0
+          west zephyr-export
+      - name: Fix displayed active Bluetooth profile
+        working-directory: /tmp/velvet
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('zmk/app/src/display/widgets/output_status.c')
+          s = p.read_text()
+          old = 'state.selected_endpoint.ble.profile_index + 1'
+          assert s.count(old) == 3, 'Unexpected display source; stop instead of applying an unsafe patch'
+          s = s.replace('    bool active_profile_connected;', '    int active_profile_index;\n    bool active_profile_connected;')
+          s = s.replace('        .active_profile_connected =', '#if defined(CONFIG_ZMK_BLE)\n        .active_profile_index = zmk_ble_active_profile_index(),\n#endif\n        .active_profile_connected =')
+          p.write_text(s.replace(old, 'state.active_profile_index + 1'))
+          PY
+          west manifest --freeze > resolved-manifest.yml
+          git -C zmk diff --check
+          git -C zmk diff > display-fix.patch
+      - name: Build firmware
+        working-directory: /tmp/velvet
+        shell: bash
+        env:
+          SIDE: ${{ matrix.side }}
+        run: |
+          args=()
+          cmake_args=()
+          if [ "$SIDE" = right ]; then
+            args=(-S studio-rpc-usb-uart)
+            cmake_args=(-DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n)
+          fi
+          west build -s zmk/app -d build -b nice_nano//zmk "${args[@]}" -- -DZMK_CONFIG=/tmp/velvet/config -DZMK_EXTRA_MODULES="$GITHUB_WORKSPACE" -DSHIELD="velvet_${SIDE} nice_view" "${cmake_args[@]}"
+          mkdir -p artifacts
+          cp build/zephyr/zmk.uf2 "artifacts/velvet_${SIDE}.uf2"
+          cp build/zephyr/zmk.elf "artifacts/velvet_${SIDE}.elf"
+          cp build/zephyr/.config "artifacts/velvet_${SIDE}.config"
+          cp resolved-manifest.yml display-fix.patch artifacts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: velvet-${{ matrix.side }}-screen-fix
+          path: /tmp/velvet/artifacts
+          if-no-files-found: error
