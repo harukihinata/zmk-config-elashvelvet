@@ -59,7 +59,7 @@ jobs:
           cmake_args=()
           if [ "$SIDE" = right ]; then
             args=(-S studio-rpc-usb-uart)
-            cmake_args=(-DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DCONFIG_ZMK_BLE_PASSKEY_ENTRY=y)
+            cmake_args=(-DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DCONFIG_ZMK_BLE_PASSKEY_ENTRY=y -DCONFIG_ZMK_STUDIO_LOCK_BLE_DIRECT_ADVERTISING_ON_UNLOCK=y)
           fi
           west build -s zmk/app -d build -b nice_nano//zmk "${args[@]}" -- -DZMK_CONFIG=/tmp/velvet/config -DZMK_EXTRA_MODULES="$GITHUB_WORKSPACE" -DSHIELD="velvet_${SIDE} nice_view" "${cmake_args[@]}"
           mkdir -p artifacts
@@ -69,7 +69,7 @@ jobs:
           cp resolved-manifest.yml display-fix.patch artifacts/
       - uses: actions/upload-artifact@v4
         with:
-          name: velvet-${{ matrix.side }}-passkey-test
+          name: velvet-${{ matrix.side }}-studio-ble
           path: /tmp/velvet/artifacts
           if-no-files-found: error
 
