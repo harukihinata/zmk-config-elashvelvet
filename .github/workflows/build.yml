@@ -46,7 +46,7 @@ jobs:
           s = s.replace('        .active_profile_connected =', '#if defined(CONFIG_ZMK_BLE)\n        .active_profile_index = zmk_ble_active_profile_index(),\n#endif\n        .active_profile_connected =')
           p.write_text(s.replace(old, 'state.active_profile_index + 1'))
           PY
-          west manifest --freeze > resolved-manifest.yml
+          west manifest --freeze --active-only > resolved-manifest.yml
           git -C zmk diff --check
           git -C zmk diff > display-fix.patch
       - name: Build firmware
@@ -72,3 +72,4 @@ jobs:
           name: velvet-${{ matrix.side }}-screen-fix
           path: /tmp/velvet/artifacts
           if-no-files-found: error
+
